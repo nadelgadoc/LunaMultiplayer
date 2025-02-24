@@ -71,9 +71,17 @@ namespace Server.Server
                 {
                     responseData = GetVesselsInfo();
                 }
-                else
+                // else if (request.Url.AbsolutePath == "/vesselsid")
+                // {
+                //     responseData = GetActiveVesselsId();
+                // }
+                else if (request.Url.AbsolutePath == "/info")
                 {
                     responseData = GetServerInfo();
+                }
+                else
+                {
+                    responseData = GetInvalidAnswer();
                 }
 
                 byte[] buffer = Encoding.UTF8.GetBytes(responseData);
@@ -87,6 +95,11 @@ namespace Server.Server
         {
             apiRunning = false;
             listener?.Stop();
+        }
+
+        private static string GetInvalidAnswer()
+        {
+            return $"{{ \"error\": \"unknownCommand\" }}";
         }
 
         private static string GetPlayersInfo()
@@ -109,11 +122,56 @@ namespace Server.Server
 
                 var vesselIdList = vessels.Select(v => v.Key).ToList();
                 var vesselList = new List<string>();
+                var resultList = new List<Dictionary<string, object>>();
                 foreach (var vesselId in vesselIdList){
-                    Dictionary<string, object> result = ParseTextToJson(VesselStoreSystem.GetVesselInConfigNodeFormat(vesselId));
-                    vesselList.Add(result);
+                    string decodedInput = DecodeEscapedCharacters(VesselStoreSystem.GetVesselInConfigNodeFormat(vesselId));
+                    LunaLog.Normal($"DecodedInput: {decodedInput}");
+                    resultList.Add(ParseTextToJson(decodedInput));
                 }
-                return JsonSerializer.Serialize(new { vesselCount = vesselIdList.Count, vessels = vesselList }, new JsonSerializerOptions { WriteIndented = true });
+                var json = JsonSerializer.Serialize(resultList, new JsonSerializerOptions { WriteIndented = false });
+                return JsonSerializer.Serialize(new { vesselCount = vesselIdList.Count, vessels = json }, new JsonSerializerOptions { WriteIndented = false });
+            }
+            catch (Exception ex)
+            {
+                return $"{{ \"error\": \"{ex.Message}\" }}";
+            }
+        }
+
+        // private static string GetVesselById(string vesselId)
+        // {
+        //     try
+        //     {
+        //         var vessels = VesselStoreSystem.CurrentVessels;
+        //         if (vessels == null || !vessels.Any())
+        //         {
+        //             return "{ \"vesselCount\": 0, \"vessels\": [] }";
+        //         }
+
+        //         var vesselIdList = vessels.Select(v => v.Key).ToList();
+        //         var vesselList = new List<string>();
+        //         var resultList = new List<Dictionary<string, object>>();
+        //         resultList.Add(ParseTextToJson(VesselStoreSystem.GetVesselInConfigNodeFormat(vesselId)));
+        //         var json = JsonSerializer.Serialize(resultList, new JsonSerializerOptions { WriteIndented = true });
+        //         return JsonSerializer.Serialize(new { vesselInfo = json }, new JsonSerializerOptions { WriteIndented = true });
+        //     }
+        //     catch (Exception ex)
+        //     {
+        //         return $"{{ \"error\": \"{ex.Message}\" }}";
+        //     }
+        // }
+
+        private static string GetActiveVesselsId()
+        {
+            try
+            {
+                var vessels = VesselStoreSystem.CurrentVessels;
+                if (vessels == null || !vessels.Any())
+                {
+                    return "{ \"vesselCount\": 0, \"vesselsId\": [] }";
+                }
+
+                var vesselIdList = vessels.Select(v => v.Key).ToList();
+                return JsonSerializer.Serialize(new { vesselCount = vesselIdList.Count, vesselsId = vesselIdList }, new JsonSerializerOptions { WriteIndented = true });
             }
             catch (Exception ex)
             {
@@ -128,6 +186,11 @@ namespace Server.Server
             var playersJson = JsonSerializer.Serialize(playersArray);
 
             return $"{{ \"players\": {ServerContext.PlayerCount}, \"playerList\": {playersJson}, \"running\": {ServerContext.ServerRunning.ToString().ToLower()}, \"uptime\": \"{uptime}\" }}";
+        }
+
+        static string DecodeEscapedCharacters(string input)
+        {
+            return Regex.Unescape(input);
         }
 
         static Dictionary<string, object> ParseTextToJson(string input)
